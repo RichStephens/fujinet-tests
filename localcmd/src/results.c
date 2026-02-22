@@ -48,7 +48,6 @@ ResultNode *node_find(uint16_t index)
 
 
   for (node = result_list.head; node; node = node->next) {
-    //printf("WANT %d HAVE %d NEXT %04x\n", index, node->tr->index, node->next);
     if (node->tr->index == index)
       return node;
   }
@@ -145,7 +144,6 @@ void result_append(TestResult *result)
   node = (ResultNode *) malloc(sizeof(*node));
   node->tr = result;
   node->prev = node->next = NULL;
-  printf("APPEND %04x %04x\n", node, node->tr);
   if (!result_list.head) {
     result_list.head = result_list.tail = node;
   }
@@ -224,7 +222,6 @@ void result_record(uint16_t index, TestCommand *test, FujiCommand *cmd, bool suc
 
   result = node->tr;
   result->command_name = cmd->name;
-  printf("NAME %04x\n", cmd->name);
   result->command = test->command;
   result->device = test->device;
   result->success = success;

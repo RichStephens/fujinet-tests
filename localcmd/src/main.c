@@ -84,23 +84,25 @@ int main(void)
       exit(1);
     }
 
-    printf("RUNNING TESTS: %s\n", testfname);
-    execute_tests(testfname);
+    while (1) {
+      printf("RUNNING TESTS: %s\n", testfname);
+      execute_tests(testfname);
 
-    printf("DONE\n");
-    if (console_width > 32)
-    {
-        printf("\nTests complete. Press a key for results.");
-        fflush(stdout);
+      printf("DONE\n");
+      if (console_width > 32)
+        {
+          printf("\nTests complete. Press a key for results.");
+          fflush(stdout);
+        }
+      else
+        {
+          printf("\n<Tests complete.>\n");
+          printf("Press a key for results.");
+          fflush(stdout);
+        }
+      cgetc();
+      print_test_results();
     }
-    else
-    {
-        printf("\n<Tests complete.>\n");
-        printf("Press a key for results.");
-        fflush(stdout);
-    }
-    cgetc();
-    print_test_results();
 
     return 0;
 }
