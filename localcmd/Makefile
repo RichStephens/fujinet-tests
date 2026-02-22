@@ -53,7 +53,7 @@ DISK_EXTRA_DEPS_COCO := $(AUTOEXEC_COCO) $(TESTLOAD_BIN)
 
 $(TESTLOAD_BIN):: $(TESTLOAD_COCO) | $(R2R_PD)
 	cmoc -o $@ $<
-  
+
 DISK_EXTRA_DEPS_COCO = $(TESTLOAD_BIN) $(AUTOEXEC_COCO)
 LDFLAGS_EXTRA_COCO = --org=0E00 --limit=7C00
 
@@ -61,8 +61,7 @@ coco/disk-post::
 	decb copy -t -0 $(AUTOEXEC_COCO) "$(DISK),AUTOEXEC.BAS"
 	writecocofile $(DISK) $(TESTLOAD_BIN)
 
-DISK_EXTRA_FILES = commands.jsn tests.tst
-#DISK_EXTRA_FILES = commands.jsn appkey.tst
+DISK_EXTRA_FILES = commands.jsn tests.tst smbdir.tst ftpdir.tst appkey.tst
 DISK_EXTRA_FILES_ATARI = DOS.SYS
 DISK_TOOL_FLAGS_ATARI = -S -b Dos25
 EXEC_NAME_ATARI = AUTORUN.SYS
@@ -74,5 +73,3 @@ LDFLAGS_EXTRA_MSX = -pragma-define:CRT_HEAP_AMALLOC=3
 
 CFLAGS_EXTRA_ADAM_CPM = -DAMALLOC
 LDFLAGS_EXTRA_ADAM_CPM = -pragma-define:CRT_HEAP_AMALLOC=3
-
-

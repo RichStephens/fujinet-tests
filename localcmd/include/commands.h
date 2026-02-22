@@ -3,6 +3,8 @@
 
 #include <fujinet-fuji.h>
 
+#define MAX_COMMAND_LENGTH 50
+
 enum {
   TYPE_BOOL      = 'b',
   TYPE_UNSIGNED  = 'u',

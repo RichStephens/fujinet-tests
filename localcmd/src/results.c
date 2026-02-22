@@ -7,119 +7,241 @@
 #include <stdio.h>
 #include <string.h>
 
+typedef struct {
+  uint16_t index;
+  uint8_t command;
+  char *command_name;
+  uint8_t device;
+  bool success;
+  uint8_t flags;
+} TestResult;
+
+typedef struct ResultNode {
+  TestResult *tr;
+  struct ResultNode *prev, *next;
+} ResultNode;
+
+typedef struct {
+  uint16_t total, pass_count, warn_count;
+  ResultNode *head;
+  ResultNode *tail;
+  ResultNode *last_failure;  // end of failure block
+  ResultNode *last_warn;     // end of warn block (warns are after failures)
+} ResultList;
+
 ResultList result_list;
 AdapterConfig fn_config;
 char outbuf[80];
 char resultbuf[5];
-int total, pass_count, warn_count;
+char temp_cmd_name[MAX_COMMAND_LENGTH];
 
-void result_list_init(ResultList *list)
+void results_reset()
 {
-    list->head = 0;
-    list->tail = 0;
-    list->last_failure = 0;
-    list->last_warn = 0;
-    total = pass_count = warn_count = 0;
+  result_list.pass_count = result_list.warn_count = 0;
+  result_list.last_failure = result_list.last_warn = 0;
+  return;
 }
 
-bool result_list_insert(ResultList *list, TestResult *tr)
+ResultNode *node_find(uint16_t index)
+{
+  ResultNode *node;
+
+
+  for (node = result_list.head; node; node = node->next) {
+    //printf("WANT %d HAVE %d NEXT %04x\n", index, node->tr->index, node->next);
+    if (node->tr->index == index)
+      return node;
+  }
+
+  return NULL;
+}
+
+void node_detach(ResultNode *node)
+{
+  if (result_list.last_failure == node)
+    result_list.last_failure = node->prev;
+  if (result_list.last_warn == node)
+    result_list.last_warn == node->prev;
+
+  if (node->prev)
+    node->prev->next = node->next;
+  else
+    result_list.head = node->next;
+
+  if (node->next)
+    node->next->prev = node->prev;
+  else
+    result_list.tail = node->prev;
+
+  node->prev = node->next = NULL;
+  return;
+}
+
+void node_insert(ResultNode *after, ResultNode *new)
+{
+  if (!after) { // Insert at beginning of list
+    new->next = result_list.head;
+    new->prev = NULL;
+    if (result_list.head)
+      result_list.head->prev = new;
+    if (!result_list.tail)
+      result_list.tail = new;
+    result_list.head = new;
+    return;
+  }
+
+  new->next = after->next;
+  new->prev = after;
+  if (after->next)
+    after->next->prev = new;
+  else
+    result_list.tail = new;
+  after->next = new;
+}
+
+void move_to_failure(ResultNode *node)
+{
+  ResultNode *after;
+
+
+  node_detach(node);
+  after = result_list.last_failure;
+  node_insert(after, node);
+  result_list.last_failure = node;
+  if (result_list.last_warn == after)
+    result_list.last_warn = node;
+
+  return;
+}
+
+void move_to_warn(ResultNode *node)
+{
+  ResultNode *after;
+
+
+  node_detach(node);
+  after = result_list.last_warn;
+  if (!after)
+    after = result_list.last_failure;
+
+  node_insert(after, node);
+  result_list.last_warn = node;
+
+  return;
+}
+
+void move_to_success(ResultNode *node)
+{
+  node_detach(node);
+  node_insert(result_list.tail, node);
+  return;
+}
+
+void result_append(TestResult *result)
+{
+  ResultNode *node;
+
+
+  node = (ResultNode *) malloc(sizeof(*node));
+  node->tr = result;
+  node->prev = node->next = NULL;
+  printf("APPEND %04x %04x\n", node, node->tr);
+  if (!result_list.head) {
+    result_list.head = result_list.tail = node;
+  }
+  else {
+    node->prev = result_list.tail;
+    result_list.tail->next = node;
+    result_list.tail = node;
+  }
+
+  result_list.total++;
+  return;
+}
+
+void result_create(uint16_t index, const char *cmd_name)
+{
+  TestResult *result;
+  ResultNode *node;
+
+
+  node = node_find(index);
+  if (node)
+    result = node->tr;
+  else {
+    result = (TestResult *) malloc(sizeof(TestResult));
+    result_append(result);
+  }
+
+  memset(result, 0, sizeof(*result));
+  strcpy(temp_cmd_name, cmd_name);
+  result->index = index;
+  result->command_name = temp_cmd_name;
+  return;
+}
+
+bool node_update(ResultNode *node)
 {
     bool is_warn, is_fail;
-    ResultNode *node;
     ResultNode *insert_after = NULL;
+    TestResult *result;
 
 
-    node = (ResultNode *)malloc(sizeof(*node));
-    if (!node)
-        return false;
-
-    total++;
-    node->tr = tr;
-    node->next = 0;
+    result = node->tr;
 
     /* Classify */
-    is_warn = (!tr->success) && (tr->flags & FLAG_WARN);
-    is_fail = (!tr->success) && !is_warn; /* i.e., failure without warn */
-    /* pass is tr->success == true */
-    if (is_warn)
-      warn_count++;
-    else if (!is_fail)
-      pass_count++;
+    is_warn = (!result->success) && (result->flags & FLAG_WARN);
+    is_fail = (!result->success) && !is_warn; /* i.e., failure without warn */
+    /* pass is result->success == true */
 
-    if (!list->head)
-    {
-        list->head = list->tail = node;
-        if (is_fail)
-            list->last_failure = node;
-        else if (is_warn)
-            list->last_warn = node;
-        return true;
+    if (is_fail) {
+      /* Bucket 1: FAIL (success==false, not WARN) */
+      move_to_failure(node);
+    }
+    else if (is_warn) {
+      /* Bucket 2: WARN (success==false AND FLAG_WARN) */
+      move_to_warn(node);
+      result_list.warn_count++;
+    }
+    else {
+      /* Bucket 3: PASS */
+      move_to_success(node);
+      result_list.pass_count++;
     }
 
-    /* Bucket 1: FAIL (success==false, not WARN) */
-    if (is_fail)
-    {
-        if (!list->last_failure)
-        {
-            node->next = list->head;
-            list->head = node;
-        }
-        else
-        {
-            node->next = list->last_failure->next;
-            list->last_failure->next = node;
-        }
-
-        if (!node->next)
-            list->tail = node;
-
-        list->last_failure = node;
-
-        /* If WARN block existed, and we inserted before it, it remains valid.
-           (We inserted after last_failure, which is before WARN block by construction.) */
-        return true;
-    }
-
-    /* Bucket 2: WARN (success==false AND FLAG_WARN) */
-    if (is_warn)
-    {
-        if (list->last_warn)
-            insert_after = list->last_warn; /* after last WARN */
-        else if (list->last_failure)
-            insert_after = list->last_failure; /* after FAIL block */
-
-        if (!insert_after)
-        {
-            node->next = list->head;
-            list->head = node;
-        }
-        else
-        {
-            node->next = insert_after->next;
-            insert_after->next = node;
-        }
-
-        if (!node->next)
-            list->tail = node;
-
-        list->last_warn = node;
-        return true;
-    }
-
-    /* Bucket 3: PASS */
-    list->tail->next = node;
-    list->tail = node;
     return true;
+}
+
+void result_record(uint16_t index, TestCommand *test, FujiCommand *cmd, bool success)
+{
+  ResultNode *node;
+  TestResult *result;
+
+
+  node = node_find(index);
+  if (!node)
+    return;
+
+  result = node->tr;
+  result->command_name = cmd->name;
+  printf("NAME %04x\n", cmd->name);
+  result->command = test->command;
+  result->device = test->device;
+  result->success = success;
+  result->flags = test->flags;
+
+  node_update(node);
+  return;
 }
 
 void print_test_result_header(char *fn_version)
 {
-    int fail_count = total - pass_count - warn_count;
+    int fail_count = result_list.total - result_list.pass_count - result_list.warn_count;
 
     printf("LCLTEST: %s FujiNet FW: %s\n\n", GIT_VERSION, fn_version);
     printf("Computer: %s\n", computer_model());
     printf("Total: %d PASS: %d WARN: %d FAIL: %d\n",
-           total, pass_count, warn_count, fail_count);
+           result_list.total, result_list.pass_count, result_list.warn_count, fail_count);
     printf("\n");
 }
 
@@ -136,7 +258,7 @@ void print_test_results()
     print_test_result_header(fn_config.fn_version);
 
     n = result_list.head;
-    for (count = 0; count < total; count++)
+    for (count = 0; count < result_list.total; count++)
     {
         result = n->tr;
 

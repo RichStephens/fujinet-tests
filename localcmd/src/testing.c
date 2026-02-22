@@ -204,9 +204,8 @@ void execute_tests(const char *path)
   uint16_t idx, dev_idx;
   void *data, *expected;
   bool success;
-  TestResult *result_ptr;
-  char command[50];
-  char query[50];
+  char command[MAX_COMMAND_LENGTH];
+  char query[MAX_COMMAND_LENGTH];
 
   printf("Running tests...\n");
 
@@ -215,6 +214,8 @@ void execute_tests(const char *path)
     return;
   }
 
+  results_reset();
+
   while (true) {
     sprintf(query, "/%d/command", count);
     bytesread = json_query(query, command);
@@ -222,6 +223,8 @@ void execute_tests(const char *path)
       break;
 
     printf("command: %s\n", command);
+    result_create(count, command);
+
     cmd = find_command(command);
     if (!cmd) {
       printf("Unknown command\n");
@@ -299,15 +302,7 @@ void execute_tests(const char *path)
     success = run_test(&exec_test, data, expected);
 
 
-    // Record result
-    result_ptr = (TestResult *)malloc(sizeof(TestResult));
-    result_ptr->command_name = cmd->name;
-    result_ptr->command = exec_test.command;
-    result_ptr->device = exec_test.device;
-    result_ptr->success = success;
-    result_ptr->flags = exec_test.flags;
-
-    result_list_insert(&result_list, result_ptr);
+    result_record(count, &exec_test, cmd, success);
     count++;
 
     if (!(exec_test.flags & FLAG_WARN) && !success)
